@@ -6,8 +6,10 @@ import time
 
 # ================= 配置区域 (请在此处填入你的信息) =================
 
-# 1. 你的 API Key (请直接粘贴在引号内，不要改变量名)
-my_api_key = ""
+try:
+    my_api_key = st.secrets["GOOGLE_API_KEY"]
+except Exception:
+    st.error("⚠️ 未检测到 Key")
 
 # 2. 模型选择 (保持我们要的 2.5 flash)
 MODEL_NAME = 'gemini-2.5-flash' 
