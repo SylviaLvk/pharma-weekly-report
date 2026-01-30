@@ -1,31 +1,13 @@
-import os
-
-# --- 🚀 核心修复：根据 check_net.py 的成功结果，强制指定网络 ---
-# 这一步必须在 import google.generativeai 之前执行
-proxy = "http://127.0.0.1:1082"
-os.environ["HTTP_PROXY"] = proxy
-os.environ["HTTPS_PROXY"] = proxy
-# -----------------------------------------------------------
-
-# 👇 下面是你原来的代码（import streamlit as st ... 等等）
 import streamlit as st
 import requests
-import os  # <--- 确保有这个 import
-# --- 🌐 核心修复：给 Streamlit 装上网络导航仪 ---
-# 必须显式告诉程序走你的代理端口 (你之前告诉我你的端口是 1082)
-os.environ["HTTP_PROXY"] = "http://127.0.0.1:1082"
-os.environ["HTTPS_PROXY"] = "http://127.0.0.1:1082"
-# ----------------------------------------------
 from bs4 import BeautifulSoup
 import google.generativeai as genai
 import time
 
 # ================= 配置区域 (请在此处填入你的信息) =================
 
-try:
-    my_api_key = st.secrets["GOOGLE_API_KEY"]
-except Exception:
-    st.error("⚠️ 未检测到 Key")
+# 1. 你的 API Key (请直接粘贴在引号内，不要改变量名)
+my_api_key = ""
 
 # 2. 模型选择 (保持我们要的 2.5 flash)
 MODEL_NAME = 'gemini-2.5-flash' 
