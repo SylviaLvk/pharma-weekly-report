@@ -1,160 +1,146 @@
 import streamlit as st
 import requests
+import os
 from bs4 import BeautifulSoup
 import google.generativeai as genai
 import time
 
-# --- 🔒 密码保护门禁代码开始 ---
+# ================= 核心配置区域 (只改这里) =================
+
+# ⚠️ 请将你最新的、AIza 开头的 Key 粘贴在下面引号里！
+# 这把 Key 将用于【本地运行】
+LOCAL_API_KEY = "" 
+
+# ========================================================
+
+# --- 1. 智能环境检测 (自动判断是本地还是云端) ---
+try:
+    # 尝试读取云端保险箱 (Streamlit Cloud)
+    # 如果这行不报错，说明在云端
+    my_api_key = st.secrets["GOOGLE_API_KEY"]
+    is_cloud = True
+    print("☁️ 检测到云端环境，使用云端 Key")
+except FileNotFoundError:
+    # 报错说明没找到 secrets.toml，说明在本地 Mac
+    is_cloud = False
+    print("💻 检测到本地环境，使用本地硬编码 Key")
+    
+    # 1. 使用你上面填的 Key
+    my_api_key = LOCAL_API_KEY
+    
+    # 2. 强制开启本地代理 (修复一直转圈的问题)
+    proxy = "http://127.0.0.1:1082"
+    os.environ["HTTP_PROXY"] = proxy
+    os.environ["HTTPS_PROXY"] = proxy
+
+# --- 2. 密码保护 (仅在云端生效，本地免密) ---
 def check_password():
-    """检查密码是否正确"""
-    # 如果 Secrets 里没配密码，为了防止报错，默认允许访问
+    # 如果是本地，或者云端没设密码，直接放行
+    if not is_cloud:
+        return True
+    
     if "APP_PASSWORD" not in st.secrets:
         return True
 
     def password_entered():
-        """验证密码的回调函数"""
         if st.session_state["password"] == st.secrets["APP_PASSWORD"]:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # 验证通过后清除密码
+            del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
-    # 如果已经验证通过，直接返回 True
     if st.session_state.get("password_correct", False):
         return True
 
-    # 如果没通过，显示输入框
-    st.text_input(
-        "🔒 请输入访问密码", 
-        type="password", 
-        on_change=password_entered, 
-        key="password"
-    )
-    
+    st.text_input("🔒 请输入访问密码", type="password", on_change=password_entered, key="password")
     if "password_correct" in st.session_state and not st.session_state["password_correct"]:
-        st.error("❌ 密码错误，请重试")
-        
+        st.error("❌ 密码错误")
     return False
 
-# ⛔️ 如果没通过密码验证，直接停止运行下面的代码
+# 执行密码检查
 if not check_password():
     st.stop()
-# --- 🔒 密码保护门禁代码结束 ---
 
-
-# ================= 配置区域 =================
-
-# 1. 从云端保险箱读取 API Key (不要直接填在这里！)
-try:
-    my_api_key = st.secrets[""]
-except Exception:
-    st.error("⚠️ 未检测到 API Key，请检查 Streamlit Secrets 设置。")
-    st.stop()
-
-# 2. 模型选择
-MODEL_NAME = 'gemini-2.5-flash' 
-
-# ===========================================
-
-# 配置 Gemini
+# --- 3. 配置 Gemini 模型 ---
 try:
     genai.configure(api_key=my_api_key)
+    model = genai.GenerativeModel('gemini-2.5-flash')
 except Exception as e:
     st.error(f"API Key 配置出错: {e}")
+    st.stop()
 
-# 页面基础设置
+# --- 4. 页面主体逻辑 ---
 st.set_page_config(page_title="医药行业周报生成器", page_icon="💊", layout="wide")
+st.title("💊 医药行业周报 AI 生成器")
 
+if not is_cloud:
+    st.caption("🟢 当前模式：本地直连 (已启用代理 1082)")
+else:
+    st.caption("☁️ 当前模式：云端部署 (密码保护中)")
+
+# 抓取函数
 def get_page_content(url):
-    """抓取逻辑"""
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
+        headers = {"User-Agent": "Mozilla/5.0"}
         resp = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(resp.text, "html.parser")
         
-        # 提取标题
         title = soup.select_one("#activity-name")
-        title = title.get_text(strip=True) if title else "无标题"
+        content = soup.select_one("#js_content")
         
-        # 提取正文
-        content_div = soup.select_one("#js_content")
-        if content_div:
-            text = content_div.get_text("\n", strip=True)
-            return f"【标题】：{title}\n【内容】：{text[:3000]}\n" 
-        else:
-            return f"【标题】：{title}\n（未抓取到正文）\n"
-            
+        t_text = title.get_text(strip=True) if title else "无标题"
+        c_text = content.get_text("\n", strip=True)[:3000] if content else "无正文"
+        return f"【标题】：{t_text}\n【内容】：{c_text}\n"
     except Exception as e:
-        return f"❌ 抓取失败 {url}: {e}\n"
+        return f"❌ 抓取失败: {e}"
 
-def generate_report_with_ai(articles_content):
-    """AI 生成逻辑"""
-    prompt = f"""
-    你是一位资深的医药行业分析师。请根据以下抓取的微信公众号文章内容，撰写一份专业的【本周医药行业周报】。
-
-    【输入内容】：
-    {articles_content}
-
-    【输出格式要求】（请严格遵守 Markdown 格式）：
-    # [请生成一个极具吸引力的大标题]
-    ## 📅 本周导语
-    ## 🚀 前沿动态
-    ## 💰 资本战略
-    ## 📝 结语
-    """
-    
-    model = genai.GenerativeModel(MODEL_NAME)
-    response = model.generate_content(prompt)
-    return response.text
-
-# ================= 网页界面 (UI) 部分 =================
-
-st.title("💊 医药行业周报 AI 生成器")
-st.markdown("不用再改代码文件，直接粘贴链接，一键生成报告。")
-
+# 界面布局
 col1, col2 = st.columns([1, 1])
 
 with col1:
-    st.subheader("1. 输入文章链接")
-    urls_input = st.text_area("请把微信公众号链接粘贴在这里（一行一个）：", height=300)
-    start_btn = st.button("🚀 开始生成周报", type="primary")
+    st.subheader("1. 输入链接")
+    urls_input = st.text_area("请粘贴微信公众号链接（一行一个）：", height=200)
+    start_btn = st.button("🚀 生成周报", type="primary")
 
 with col2:
-    st.subheader("2. 生成结果")
+    st.subheader("2. 结果展示")
     result_container = st.empty()
 
 if start_btn:
     if not urls_input.strip():
-        st.warning("⚠️ 请先粘贴至少一个链接！")
+        st.warning("请先输入链接！")
     else:
-        url_list = [line.strip() for line in urls_input.split('\n') if line.strip()]
-        st.toast(f"检测到 {len(url_list)} 个链接，准备开始工作...")
-        
-        progress_bar = st.progress(0)
         status_text = st.empty()
-        
+        bar = st.progress(0)
         all_content = ""
-        
-        for i, url in enumerate(url_list):
-            status_text.text(f"正在读取第 {i+1} 篇文章：{url[:30]}...")
-            content = get_page_content(url)
-            all_content += content + "\n\n" + ("-" * 20) + "\n\n"
-            progress_bar.progress((i + 1) / len(url_list))
-            time.sleep(0.5)
+        url_list = [u.strip() for u in urls_input.split('\n') if u.strip()]
 
-        status_text.text("✅ 抓取完毕，AI 分析中...")
+        for i, url in enumerate(url_list):
+            status_text.text(f"正在读取第 {i+1}/{len(url_list)} 篇...")
+            all_content += get_page_content(url) + "\n\n---\n\n"
+            bar.progress((i + 1) / len(url_list))
+
+        status_text.text("正在呼叫 AI 撰写报告...")
         
         try:
-            report = generate_report_with_ai(all_content)
+            prompt = f"""
+            你是一位医药行业资深分析师。请根据以下抓取的文章内容，写一份周报。
+            
+            【内容输入】：
+            {all_content}
+            
+            【格式要求】：
+            # [大标题]
+            ## 📅 导语
+            ## 🚀 核心动态
+            ## 💡 投资洞察
+            """
+            response = model.generate_content(prompt)
+            bar.empty()
             status_text.empty()
-            progress_bar.empty()
             
             with col2:
-                st.success("生成成功！")
-                st.markdown(report)
-                st.download_button("📥 下载 Markdown", data=report, file_name="report.md", mime="text/markdown")
-                
+                st.success("✅ 生成成功！")
+                st.markdown(response.text)
         except Exception as e:
-            st.error(f"AI 生成出错: {e}")
+            st.error(f"生成出错: {e}")
