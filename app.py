@@ -1,3 +1,13 @@
+import os
+
+# --- 🚀 核心修复：根据 check_net.py 的成功结果，强制指定网络 ---
+# 这一步必须在 import google.generativeai 之前执行
+proxy = "http://127.0.0.1:1082"
+os.environ["HTTP_PROXY"] = proxy
+os.environ["HTTPS_PROXY"] = proxy
+# -----------------------------------------------------------
+
+# 👇 下面是你原来的代码（import streamlit as st ... 等等）
 import streamlit as st
 import requests
 import os  # <--- 确保有这个 import
