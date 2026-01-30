@@ -1,5 +1,11 @@
 import streamlit as st
 import requests
+import os  # <--- 确保有这个 import
+# --- 🌐 核心修复：给 Streamlit 装上网络导航仪 ---
+# 必须显式告诉程序走你的代理端口 (你之前告诉我你的端口是 1082)
+os.environ["HTTP_PROXY"] = "http://127.0.0.1:1082"
+os.environ["HTTPS_PROXY"] = "http://127.0.0.1:1082"
+# ----------------------------------------------
 from bs4 import BeautifulSoup
 import google.generativeai as genai
 import time
